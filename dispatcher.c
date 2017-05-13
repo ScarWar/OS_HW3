@@ -1,6 +1,8 @@
+#include <stdlib.h>
 #include <stdio.h>
-#include <unistd.h>
 #include <string.h>
+#include <unistd.h>
+#include <math.h>
 
 #define SQ(x) ((x) * (x))
 #define abs(x) ((x < 0) ? (-x) : (x))
@@ -22,18 +24,45 @@ int int_sqrt(int n) {
 }
 
 int main(int argc, const char **argv) {
-    int s, s1 = 0;
-    int x;
-    s = int_sqrt(213 >> 23);
-    s1 = s;
-    while (s1 > 0) {
-        s1 -= s;
-        fork();
-        char execv_argv[] = {
-                "counter",
+//    int s, s1 = 0;
+    size_t x;
+    int ret = -2;
+    char *offset;
+    char *execv_argv[6] = {
+            "counter.o",
+            "c",
+            "some.txt",
+            "8",
+            NULL,
+            NULL
+    };
+    for (int i = 0; i < 5; i += 2)
+    {
+        pid_t p = fork();
+        if(p > 0){
+            x = (size_t)((ceil(log10( i * 16))+1));
+            offset = malloc(x);
+            offset[x] = 0;
+            sprintf(execv_argv[4],"%d", i * 16);
+            printf("%s\n", execv_argv[4]);
 
-        };
-        execv("counter", execv_argv);
+            // ret = execv("counter.o", execv_argv);
+        } else {
+            x = (size_t)((ceil(log10( i * 16 + 8))+1));
+            offset = malloc(x);
+            offset[x] = 0;
+            sprintf(execv_argv[4],"%d", i * 16 + 8);
+            printf("%s\n", execv_argv[4]);
+            // ret = execv("counter.o", execv_argv);
+        }
+//        printf("ret = %d\n", ret);
     }
+
+//    s = int_sqrt(213 >> 23);
+//    s1 = s;
+//    while (s1 > 0) {
+//        s1 -= s;
+//        fork();
+//    }
     return 0;
 }

@@ -2,11 +2,12 @@
 #include <stdlib.h>
 
 int main(int argc, const char **argv) {
-    char *filename, trgt_c;
+    char *filename;
+    const char *trgt_c;
     off_t file_offset;
     int length;
 
-    if(argc  != 4){
+    if (argc != 5) {
         return -1;
     }
 
@@ -16,10 +17,12 @@ int main(int argc, const char **argv) {
     printf("argv[3] = %s\n", argv[3]);
     printf("argv[4] = %s\n", argv[4]);
 
-    trgt_c = (char) argv[1];
+    trgt_c = argv[1];
     filename = (char *) argv[2];
     file_offset = (off_t) atoi(argv[3]);
     length = atoi(argv[4]);
+
+    printf("Do nothing\nExiting...\n");
 
     return 0;
 }

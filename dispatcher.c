@@ -39,6 +39,14 @@ int int_sqrt(int n) {
     return lowerBound;
 }
 
+int get_nforks(long long x) {
+    /*  Linear function such that 1K will get 1 fork
+        and 4GiB and more will get 16 forks         */
+    long long y;
+    y = (5 * x) / 1431655424 + 1398096 / 1398101;
+    return (int) (1 > min(y, 16) ? 1 : min(y, 16));
+}
+
 int main(int argc, const char **argv) {
     int pipe_size, pid_size, ret = -2;
     char *pipe_file_name, *buffer;
@@ -51,7 +59,7 @@ int main(int argc, const char **argv) {
             NULL
     };
     pid_t p = fork();
-    if(p > 0){
+    if (p > 0) {
         sleep(1);
         pid_size = int_log10(p);
         pipe_file_name = (char *) malloc(strlen(PIPE_NAME_PREFIX) + pid_size + 1);
@@ -60,9 +68,9 @@ int main(int argc, const char **argv) {
         int fd = open(pipe_file_name, O_RDONLY, S_IRUSR);
         struct stat sb;
         stat(pipe_file_name, &sb);
-        buffer = malloc( (size_t) sb.st_size);
-        printf("[Debug] - tmp counter size %d\n", (int)sb.st_size);
-        if(!buffer){
+        buffer = malloc((size_t) sb.st_size);
+        printf("[Debug] - tmp counter size %d\n", (int) sb.st_size);
+        if (!buffer) {
             printf("%s\n", "[Info] - malloc error");
         }
         read(fd, buffer, (size_t) sb.st_size);

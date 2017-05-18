@@ -1,16 +1,16 @@
 #include <stdio.h>
 #include <stdlib.h>
-#include <string.h>
 #include <fcntl.h>
 #include <unistd.h>
 #include <sys/types.h>
 #include <sys/stat.h>
-#include <sys/mman.h>
 #include <errno.h>
+#include <string.h>
+#include <sys/mman.h>
+#include <signal.h>
 
-#define SQ(x) ((x) * (x))
-#define abs(x) ((x < 0) ? (-x) : (x))
-#define min(x, y) ((x) > (y) ? (x) : (y))
+#define PIPE_READ 0
+#define PIPE_WRITE 1
 #define PIPE_NAME_PREFIX "/tmp/counter_"
 
 
@@ -23,70 +23,76 @@ int int_log10(double n) {
     return l;
 }
 
-
-int int_sqrt(int n) {
-    int upperBound = n, lowerBound = 0;
-    int i = 0;
-    if (n < 0) return -1;
-    if (n == 1) return 1;
-    while (upperBound - lowerBound > 1) {
-        i = (upperBound + lowerBound) >> 1;
-        if (i * i > n)
-            upperBound = i;
-        else
-            lowerBound = i;
-    }
-    return lowerBound;
-}
-
-int get_nforks(long long int x) {
-    /*  Linear function such that 1K will get 1 fork
-        and 4GiB and more will get 16 forks         */
-    long long int y;
-    y = (5 * x) / 1431655424 + 1398096 / 1398101;
-    return (int) (1 > min(y, 16) ? 1 : min(y, 16));
-}
-
 int main(int argc, const char **argv) {
-    int pipe_size, pid_size, ret = -2;
-    char *pipe_file_name, *buffer;
-    char *execv_argv[6] = {
-            "counter.o",
-            "s",
-            "some.txt",
-            "0",
-            "64",
-            NULL
-    };
-    pid_t p = fork();
-    if (p > 0) {
-        sleep(1);
-        pid_size = int_log10(p);
-        pipe_file_name = (char *) malloc(strlen(PIPE_NAME_PREFIX) + pid_size + 1);
-        pipe_file_name[strlen(PIPE_NAME_PREFIX) + pid_size] = 0;
-        sprintf(pipe_file_name, "%s%d", PIPE_NAME_PREFIX, p);
-        int fd = open(pipe_file_name, O_RDONLY, S_IRUSR);
-        struct stat sb;
-        stat(pipe_file_name, &sb);
-        buffer = malloc((size_t) sb.st_size);
-        printf("[Debug] - tmp counter size %d\n", (int) sb.st_size);
-        if (!buffer) {
-            printf("%s\n", "[Info] - malloc error");
-        }
-        read(fd, buffer, (size_t) sb.st_size);
-        printf("%s\n", buffer);
-        close(fd);
-    } else {
-        ret = execv("counter", execv_argv);
+    char *filename, *pipe_file_name;
+    const char *trgt_c;
+    off_t file_offset;
+    int length, i, R = 0, fd, pid_size;
+
+    if (argc != 5) {
+        printf("sadasd\n");
+        return -1;
     }
-    printf("%d\n", ret);
+
+    trgt_c = argv[1];
+    filename = (char *) argv[2];
+    file_offset = (off_t) strtol(argv[3], NULL, 10);
+    length = strtol(argv[4], NULL, 10);
+
+    fd = open(filename, O_RDONLY, S_IRUSR);
+    char *p_void = (char *) mmap(NULL, length, PROT_READ, MAP_SHARED, fd, file_offset);
+
+    // Count number of instances of trgt_c in file
+    for (i = 0; i < length; ++i)
+        if (*(p_void + i) == *trgt_c)
+            R++;
 
 
-//    s = int_sqrt(213 >> 23);
-//    s1 = s;
-//    while (s1 > 0) {
-//        s1 -= s;
-//        fork();
-//    }
+    /* Calculate pipe name */
+    pid_t child_pid = getpid();
+    pid_size = int_log10(pid_size);
+    pipe_file_name = (char *) malloc(strlen(PIPE_NAME_PREFIX) + pid_size + 1);
+    pipe_file_name[strlen(PIPE_NAME_PREFIX) + pid_size] = 0;
+    sprintf(pipe_file_name, "%s%d", PIPE_NAME_PREFIX, child_pid);
+
+    /* Create the pipe */
+    if (mkfifo(pipe_file_name, O_RDWR) != 0) {
+        // TODO error
+        printf("sdsdasdsadasdasd\n");
+        return errno;
+    }
+
+    /* Send result through pipe */
+    int int_size = int_log10(R);
+    char *buffer = (char *) malloc((int_size + 1) * sizeof(char));
+    if (!buffer) {
+        // TODO error message
+        printf("asdasds\n");
+        return errno;
+    }
+    buffer[int_size] = 0;
+    sprintf(buffer, "%d", R);
+    printf("[Debug] - %d %s\n", R, buffer);
+
+    /* Send signal to parent process */
+
+    // kill(getppid(), SIGUSR1);
+
+    /* Write to parent */
+    int pipe_fd = open(pipe_file_name, O_WRONLY, S_IWUSR | S_IRUSR);
+    write(pipe_fd, buffer, (size_t) int_size + 1); // Write buffer to pipe
+
+    /* Sleep */
+    // sleep(1);
+
+    /* Free resources */
+    if (munmap(p_void, length) != 0) {
+        // TODO error
+        return errno;
+    }
+    close(pipe_fd); // Close pipe write
+    unlink(pipe_file_name);
+    free(buffer);
+    free(pipe_file_name);
     return 0;
 }

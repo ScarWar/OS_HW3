@@ -1,12 +1,28 @@
-#include <stdlib.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
+#include <fcntl.h>
 #include <unistd.h>
-#include <math.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <sys/mman.h>
+#include <errno.h>
 
 #define SQ(x) ((x) * (x))
 #define abs(x) ((x < 0) ? (-x) : (x))
 #define min(x, y) ((x) > (y) ? (x) : (y))
+#define PIPE_NAME_PREFIX "/tmp/counter_"
+
+
+int int_log10(double n) {
+    int l = 0;
+    while (n >= 1) {
+        l++;
+        n /= 10;
+    }
+    return l;
+}
+
 
 int int_sqrt(int n) {
     int upperBound = n, lowerBound = 0;
@@ -24,39 +40,39 @@ int int_sqrt(int n) {
 }
 
 int main(int argc, const char **argv) {
-//    int s, s1 = 0;
-    size_t x;
-    int ret = -2;
-    char *offset;
+    int pipe_size, pid_size, ret = -2;
+    char *pipe_file_name, *buffer;
     char *execv_argv[6] = {
             "counter.o",
-            "c",
+            "s",
             "some.txt",
-            "8",
-            NULL,
+            "0",
+            "64",
             NULL
     };
-    for (int i = 0; i < 5; i += 2)
-    {
-        pid_t p = fork();
-        if(p > 0){
-            x = (size_t)((ceil(log10( i * 16))+1));
-            offset = malloc(x);
-            offset[x] = 0;
-            sprintf(execv_argv[4],"%d", i * 16);
-            printf("%s\n", execv_argv[4]);
-
-            // ret = execv("counter.o", execv_argv);
-        } else {
-            x = (size_t)((ceil(log10( i * 16 + 8))+1));
-            offset = malloc(x);
-            offset[x] = 0;
-            sprintf(execv_argv[4],"%d", i * 16 + 8);
-            printf("%s\n", execv_argv[4]);
-            // ret = execv("counter.o", execv_argv);
+    pid_t p = fork();
+    if(p > 0){
+        sleep(1);
+        pid_size = int_log10(p);
+        pipe_file_name = (char *) malloc(strlen(PIPE_NAME_PREFIX) + pid_size + 1);
+        pipe_file_name[strlen(PIPE_NAME_PREFIX) + pid_size] = 0;
+        sprintf(pipe_file_name, "%s%d", PIPE_NAME_PREFIX, p);
+        int fd = open(pipe_file_name, O_RDONLY, S_IRUSR);
+        struct stat sb;
+        stat(pipe_file_name, &sb);
+        buffer = malloc( (size_t) sb.st_size);
+        printf("[Debug] - tmp counter size %d\n", (int)sb.st_size);
+        if(!buffer){
+            printf("%s\n", "[Info] - malloc error");
         }
-//        printf("ret = %d\n", ret);
+        read(fd, buffer, (size_t) sb.st_size);
+        printf("%s\n", buffer);
+        close(fd);
+    } else {
+        ret = execv("counter", execv_argv);
     }
+    printf("%d\n", ret);
+
 
 //    s = int_sqrt(213 >> 23);
 //    s1 = s;

@@ -24,13 +24,14 @@ int int_log10(double n) {
 }
 
 int main(int argc, const char **argv) {
-    char *filename, *pipe_file_name;
+    char *filename, pipe_file_name[strlen(PIPE_NAME_PREFIX) + 20];
     const char *trgt_c;
     off_t file_offset;
-    int length, i, R = 0, fd, pid_size;
+    int length, i, fd, pid_size;
+    long  R = 0;
 
     if (argc != 5) {
-        printf("sadasd\n");
+        printf("Error - Invalid number of arguments \n");
         return -1;
     }
 
@@ -47,52 +48,35 @@ int main(int argc, const char **argv) {
         if (*(p_void + i) == *trgt_c)
             R++;
 
-
     /* Calculate pipe name */
     pid_t child_pid = getpid();
-    pid_size = int_log10(pid_size);
-    pipe_file_name = (char *) malloc(strlen(PIPE_NAME_PREFIX) + pid_size + 1);
-    pipe_file_name[strlen(PIPE_NAME_PREFIX) + pid_size] = 0;
     sprintf(pipe_file_name, "%s%d", PIPE_NAME_PREFIX, child_pid);
 
     /* Create the pipe */
     if (mkfifo(pipe_file_name, O_RDWR) != 0) {
         // TODO error
-        printf("sdsdasdsadasdasd\n");
+        printf("Error in mkfifo\n");
         return errno;
     }
-
-    /* Send result through pipe */
-    int int_size = int_log10(R);
-    char *buffer = (char *) malloc((int_size + 1) * sizeof(char));
-    if (!buffer) {
-        // TODO error message
-        printf("asdasds\n");
-        return errno;
-    }
-    buffer[int_size] = 0;
-    sprintf(buffer, "%d", R);
-    printf("[Debug] - %d %s\n", R, buffer);
 
     /* Send signal to parent process */
-
-    // kill(getppid(), SIGUSR1);
-
-    /* Write to parent */
+     kill(getppid(), SIGUSR1);
+    
+    /*      Send result through pipe        */
+    /*          Write to parent             */
     int pipe_fd = open(pipe_file_name, O_WRONLY, S_IWUSR | S_IRUSR);
-    write(pipe_fd, buffer, (size_t) int_size + 1); // Write buffer to pipe
+    write(pipe_fd, &R, sizeof(long)); // Write buffer to pipe
 
     /* Sleep */
-    // sleep(1);
+     sleep(1);
 
     /* Free resources */
-    if (munmap(p_void, length) != 0) {
+    if (munmap(p_void, (size_t) length) != 0) {
         // TODO error
         return errno;
     }
     close(pipe_fd); // Close pipe write
     unlink(pipe_file_name);
-    free(buffer);
     free(pipe_file_name);
     return 0;
 }

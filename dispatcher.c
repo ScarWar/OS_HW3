@@ -10,10 +10,6 @@
 #include <sys/mman.h>
 #include <sys/wait.h>
 
-
-#define abs(x) ((x < 0) ? (-x) : (x))
-#define min(x, y) ((x) < (y) ? (x) : (y))
-#define max(x, y) ((x) > (y) ? (x) : (y))
 #define PIPE_NAME_PREFIX "/tmp/counter_"
 #define K (1 << 10)
 #define M (1 << 20)
@@ -22,19 +18,7 @@
 
 long long total = 0;
 
-int int_log_base(double n, int base) {
-    int l = 0;
-    while (n >= 1) {
-        l++;
-        n /= base;
-    }
-    return l;
-}
-
 int get_nforks(long long x) {
-    /*  Linear function such that 1K will get 1 fork
-        and 4GiB and more will get 16 forks         */
-    // x /= 2 * getpagesize();
     if (x <= 2 * getpagesize())
         return 1;
     else if (8 * K < x && x <= 50 * K)
@@ -59,51 +43,55 @@ int get_nforks(long long x) {
         return 11;
     else if (300 * M < x && x <= 400 * M)
         return 12;
-    else if (400 * M < x && x <= 500 * M)
+    else if (400 * M < x && x <= 700 * M)
         return 13;
-    else if (500 * M < x && x <= 600 * M)
+    else if (700 * M < x && x <= G)
         return 14;
-    else if (600 * M < x && x <= 700 * M)
+    else if (G < x && x <= 2 * G)
         return 15;
     return 16;
 }
 
 void my_signal_handler(int signum, siginfo_t *info, void *ptr) {
+    int pipe_fd;
     long long R;
     char pipe_file_name[strlen(PIPE_NAME_PREFIX) + 20];
+    ssize_t _n__read;
+
     /* Calculate pipe name */
     pid_t child_pid = info->si_pid;
     sprintf(pipe_file_name, "%s%d", PIPE_NAME_PREFIX, child_pid);
-    int pipe_fd = open(pipe_file_name, O_RDONLY, S_IWUSR | S_IRUSR);
-    if(pipe_fd < 0){
+    pipe_fd = open(pipe_file_name, O_RDONLY, S_IWUSR | S_IRUSR);
+    if (pipe_fd < 0) {
         ERROR_HANDLE("open failed");
         return;
     }
-    ssize_t _n__read = read(pipe_fd, &R, sizeof(long long));
+    _n__read = read(pipe_fd, &R, sizeof(long long));
     if (_n__read < 0 || _n__read != sizeof(long long)) {
         ERROR_HANDLE("read failed");
         return;
     }
     total += R;
-    // printf("[Debug] - Signal handler finished\n[Debug] - Number returned %lld\n", R);
 }
 
 int main(int argc, const char **argv) {
-    int n_forks, ret = -2, k;
+    int n_forks, ret = 0, k;
     char file_offset[20], chunk_length[20];
-    long long length;
+    long long length, *chunks;
+    off_t file_size, offset = 0;
+    pid_t p;
 
     if (argc != 3) {
         ERROR_HANDLE("Invalid number of arguments");
         return -1;
     }
 
-    // Structure to pass to the registration syscall
+    /* Structure to pass to the registration syscall */
     struct sigaction new_action;
     memset(&new_action, 0, sizeof(new_action));
-    // Assign pointer to our handler function
-    new_action.sa_handler = my_signal_handler;
-    // Setup the flags
+    /* Assign pointer to our handler function */
+    new_action.sa_handler = (__sighandler_t) my_signal_handler;
+    /* Setup the flags */
     new_action.sa_flags = SA_SIGINFO;
 
     if (0 != sigaction(SIGUSR1, &new_action, NULL)) {
@@ -112,31 +100,27 @@ int main(int argc, const char **argv) {
     }
 
     /* Calculate length and number of forks */
-    struct  stat sb;
-    off_t   file_size;
+    struct stat sb;
     stat(argv[2], &sb);
-    file_size    = sb.st_size;
+    file_size = sb.st_size;
     n_forks = get_nforks(sb.st_size);
-    // printf("[Debug] - number of forks = %d\n", n_forks);
-    length = (long long) (((long long) file_size) / n_forks) & ~(sysconf(_SC_PAGE_SIZE) - 1);
-    long long *chunks = (long long *) malloc((size_t) n_forks * sizeof(long long));
-    // printf("[Debug] - length = %ld\n", length);
+    length = (((long long) file_size) / n_forks) & ~(sysconf(_SC_PAGE_SIZE) - 1);
+    chunks = (long long *) malloc((size_t) n_forks * sizeof(long long));
     if (!chunks) {
         ERROR_HANDLE("memory allocation failed");
         return errno;
     }
+
+    /* Fill array of read lengths */
     for (k = 0; k < n_forks - 1; ++k) {
         chunks[k]  = length;
         file_size -= length;
-        // printf("[Debug] - chunks[%d] = %ld\n", k, length);
     }
     chunks[k] = file_size;
-    // printf("[Debug] - chunks[%d] = %ld\n", k, file_size);
-    pid_t p;
-    off_t offset = 0;
+
+    /* Create forks and execute */
     for (k = 0; k < n_forks; ++k) {
         /* Calculate execv_argv */
-        // printf("[Debug] - new parameters offset - %ld, chunk - %ld \n",offset, chunks[k] );
         sprintf(file_offset, "%lld", (long long) offset); // Convert offset to string
         sprintf(chunk_length, "%lld", chunks[k]);
         offset += length;
@@ -148,23 +132,26 @@ int main(int argc, const char **argv) {
                 chunk_length,
                 NULL
         };
-        // printf("\n[Debug] - fork #%d\n", k);
-        // printf("[Debug] - execv_argv = %s %s %s %s %s %s \n", execv_argv[0], execv_argv[1], execv_argv[2], execv_argv[3], execv_argv[4], execv_argv[5]);
         sleep(1);
         p = fork();
         if (p < 0) {
-            ERROR_HANDLE("fork failled");
+            ERROR_HANDLE("fork failed");
+            free(chunks);
             return errno;
         }
         if (p == 0) {
-            // printf("[Debug] - child pid %d\n", getpid());
-            // sleep(1);
             ret = execv("counter", execv_argv);
-            // printf("ret = %d", ret);
+            if (ret < 0) {
+                ERROR_HANDLE("child execution failed");
+                free(chunks);
+                return errno;
+            }
             break;
         }
     }
     free(chunks);
+
+    /* Handle forks */
     int status;
     char flag = 0;
     while (1) {
@@ -175,7 +162,7 @@ int main(int argc, const char **argv) {
             break;
     }
     if (!flag)
-        printf("Total number of characters = %lld\n", total);
+        printf("%lld\n", total);
     else {
         ERROR_HANDLE("Some processes have been corrupted");
         return -1;

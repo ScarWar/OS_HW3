@@ -25,6 +25,7 @@ int main(int argc, const char **argv) {
         return -1;
     }
 
+    /* Get parameters from arguments */
     trgt_c = argv[1];
     file_offset = strtoll(argv[3], NULL, 10);
     if (errno == ERANGE) {
@@ -42,32 +43,28 @@ int main(int argc, const char **argv) {
         ERROR_HANDLE("file open failed");
         return errno;
     }
-    // file_offset =  file_offset & ~(sysconf(_SC_PAGE_SIZE) - 1);
-    // printf("[Debug] - file_offset = %ld\n", file_offset);
     char *map = (char *) mmap(NULL, (size_t) length, PROT_READ, MAP_SHARED, fd, file_offset);
     if (map == MAP_FAILED) {
         ERROR_HANDLE("map failed");
         return errno;
     }
 
-    // Count number of instances of trgt_c in file
+    /* Count number of instances of trgt_c in file */
     for (i = 0; i < length; ++i)
         if (*(map + i) == *trgt_c)
             R++;
 
-
     /* Calculate pipe name */
     sprintf(pipe_file_name, "%s%d", PIPE_NAME_PREFIX, getpid());
-    // printf("[Debug] - pipe_file_name = %s\n", pipe_file_name);
 
     /* Create the pipe */
-    if (mkfifo(pipe_file_name, 0644) < 0) {
+    if (mkfifo(pipe_file_name, 0666) < 0) {
         ERROR_HANDLE("failed to create named pipe");
         return errno;
     }
+
     /* Send signal to parent process */
     kill(getppid(), SIGUSR1);
-
 
     /* Send result through pipe */
     int pipe_fd = open(pipe_file_name, O_WRONLY);
@@ -81,9 +78,7 @@ int main(int argc, const char **argv) {
         ERROR_HANDLE("failed to write to pipe");
         return errno;
     }
-    close(pipe_fd); // Close pipe write
-
-    // printf("[Debug] - number of characters %lld\n", R);
+    close(pipe_fd); // Close pipe
 
     /* Free resources */
     if (munmap(map, (size_t) length) != 0) {
